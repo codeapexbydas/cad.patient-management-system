@@ -1,65 +1,60 @@
-pipeline {
-    agent any
-    
-    tools {
-        maven 'Maven-3'
-        jdk 'JDK17'
-    }
-    
-    options {
-        timeout(time: 15, unit: 'MINUTES')
-        disableConcurrentBuilds()
-    }
-    
-    stages {
+node {
+    try {
+        // Clean workspace first
+        cleanWs()
+        
+        // Checkout code
         stage('Checkout') {
-            steps {
-                checkout scm
-                sh 'ls -la'
-            }
+            checkout([
+                $class: 'GitSCM',
+                branches: [[name: '*/main']],
+                userRemoteConfigs: [[
+                    url: 'https://github.com/codeapexbydas/cad.patient-management-system.git'
+                ]]
+            ])
+            sh 'ls -la'
         }
         
+        // Setup environment
+        stage('Setup Environment') {
+            sh '''
+                echo "=== Environment ==="
+                java -version
+                mvn --version
+                echo "Working directory:"
+                pwd
+            '''
+        }
+        
+        // Build
         stage('Build') {
-            steps {
-                sh '''
-                    echo "Java version:"
-                    java -version
-                    echo "Maven version:"
-                    mvn --version
-                    echo "Building..."
-                    mvn clean compile -DskipTests
-                '''
-            }
+            sh 'mvn clean compile -DskipTests'
         }
         
+        // Test
         stage('Test') {
-            steps {
-                sh 'mvn test'
-                post {
-                    always {
-                        junit 'target/surefire-reports/*.xml'
-                    }
-                }
-            }
+            sh 'mvn test'
+            junit 'target/surefire-reports/*.xml'
         }
         
+        // Package
         stage('Package') {
-            steps {
-                sh 'mvn package -DskipTests'
-                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-            }
+            sh 'mvn package -DskipTests'
+            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
         }
-    }
-    
-    post {
-        success {
-            echo '✅ Build successful!'
-        }
-        failure {
-            echo '❌ Build failed!'
-        }
-        always {
-            cleanWs()
-        }
+        
+        // Success message
+        echo '✅ Build successful!'
+        currentBuild.result = 'SUCCESS'
+        
+    } catch (Exception e) {
+        // Failure message
+        echo "❌ Build failed: ${e}"
+        currentBuild.result = 'FAILURE'
+        throw e
+    } finally {
+        // Always clean workspace
+        cleanWs()
+        echo "Build finished with status: ${currentBuild.result}"
     }
 }
