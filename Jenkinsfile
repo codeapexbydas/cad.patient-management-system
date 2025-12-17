@@ -1,39 +1,45 @@
 pipeline {
     agent any
     
-    options {
-        timeout(time: 10, unit: 'MINUTES')
-        disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '5'))
+    tools {
+        maven 'Maven-3'
+        jdk 'JDK17'
     }
     
-    environment {
-        // Conservative memory settings for EC2
-        MAVEN_OPTS = '-Xmx512m -XX:MaxPermSize=128m -Dmaven.test.skip=true'
-        // Skip downloads for faster builds
-        MAVEN_CLI_OPTS = '--batch-mode --no-transfer-progress -DskipTests -o'
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        disableConcurrentBuilds()
     }
     
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+                sh 'ls -la'
             }
         }
         
-        stage('Build (Skip Tests)') {
+        stage('Build') {
             steps {
                 sh '''
-                    echo "Build started at: $(date)"
-                    mvn clean compile $MAVEN_CLI_OPTS
-                    echo "Build completed at: $(date)"
+                    echo "Java version:"
+                    java -version
+                    echo "Maven version:"
+                    mvn --version
+                    echo "Building..."
+                    mvn clean compile -DskipTests
                 '''
             }
         }
         
         stage('Test') {
             steps {
-                sh 'mvn test -DskipITs'
+                sh 'mvn test'
+                post {
+                    always {
+                        junit 'target/surefire-reports/*.xml'
+                    }
+                }
             }
         }
         
@@ -46,9 +52,14 @@ pipeline {
     }
     
     post {
+        success {
+            echo '✅ Build successful!'
+        }
+        failure {
+            echo '❌ Build failed!'
+        }
         always {
-            echo "Build time: ${currentBuild.durationString}"
-            cleanWs()  // Clean workspace to save disk
+            cleanWs()
         }
     }
 }
